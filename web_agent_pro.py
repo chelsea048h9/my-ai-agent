@@ -1,30 +1,31 @@
 import json
 import streamlit as st
 from openai import OpenAI
-from duckduckgo_search import DDGS  # 👈 新增：引入强大的鸭鸭杀搜索引擎！
+from tavily import TavilyClient # 👈 换上正规军 Tavily！
 
-# 1. 网页配置
-st.set_page_config(page_title="全能老王 (联网版)", page_icon="🌐")
-st.title("🌐 全能老王的专属 Web 聊天室 (已接入真实互联网)")
+st.set_page_config(page_title="全能老王 (满血联网版)", page_icon="🌐")
+st.title("🌐 全能老王的专属 Web 聊天室 (Tavily 强力驱动)")
 
-# 2. 初始化 API (注意：这里我默认你用的是云端密码箱格式)
 client = OpenAI(
-    api_key=st.secrets["API_KEY"], # 如果你现在要在本地测，先临时换成 "sk-你的真实密码"
+    api_key=st.secrets["API_KEY"], 
     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
 )
 
+# 初始化专业的搜索客户端
+tavily_client = TavilyClient(api_key=st.secrets["TAVILY_API_KEY"])
+
 # ==========================================
-# 3. 🚨 核心换血：真实的互联网搜索工具！
+# 🚨 核心换血：大厂级别的搜索工具
 # ==========================================
 def web_search(query):
-    print(f"\n[系统：老王正在全网搜索关键词 -> {query}]")
     try:
-        # 使用 DDGS 搜索，获取前 3 条最相关的结果
-        results = DDGS().text(query, max_results=3)
-        return str(results) # 把搜索到的真实网页内容打包发给老王
+        # 使用 Tavily 专门为 AI 提供的搜索方法
+        response = tavily_client.search(query=query, search_depth="basic", max_results=3)
+        # 提取真实网页内容给老王
+        results = [f"标题: {res['title']}\n内容: {res['content']}" for res in response['results']]
+        return "\n\n".join(results)
     except Exception as e:
-        return f"搜索失败，请告诉用户网络开了小差：{str(e)}"
-
+        return f"搜索失败，网络小差：{str(e)}"
 tools = [{
     "type": "function",
     "function": {
