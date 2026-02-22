@@ -1,3 +1,6 @@
 streamlit
 openai
 tavily-python
+langchain
+langchain-openai
+langgraph
