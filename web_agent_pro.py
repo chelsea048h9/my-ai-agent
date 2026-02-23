@@ -15,7 +15,7 @@ st.title("🧠 完全体老王 (公网 + 私有知识库)")
 llm = ChatOpenAI(
     api_key=st.secrets["API_KEY"], 
     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-    model="qwen-coder-plus"
+    model="qwen-max"
 )
 tavily_client = TavilyClient(api_key=st.secrets["TAVILY_API_KEY"])
 
