@@ -18,7 +18,12 @@ llm = ChatOpenAI(
     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
     model="qwen-max"
 ) # 👈 检查这里！是不是少了这个反括号？
-
+# 如果内存里还没有脑子，先初始化一个空的
+if 'vectorstore' not in st.session_state:
+    st.session_state.vectorstore = None
+# 记录已经学过的文件名，防止重复投喂
+if 'learned_files' not in st.session_state:
+    st.session_state.learned_files = []
 tavily_client = TavilyClient(api_key=st.secrets["TAVILY_API_KEY"]) # 👈 还有这里，是不是拼写不完整？
 
 # ==========================================
@@ -30,15 +35,14 @@ with st.sidebar:
 
 # 动态读取并缓存上传的文件（把文件字节流传进来，只要传了新文件，就会自动刷新脑子）
 @st.cache_resource(show_spinner=False)
-def load_knowledge_base(file_bytes):
+# 修改加载函数，使其只负责把单个 PDF 转成向量块
+def process_new_pdf(file_bytes, file_name):
     with open("temp_upload.pdf", "wb") as f:
         f.write(file_bytes)
-        
-    # 🚨 魔法觉醒：开启 extract_images=True，老王就会自动调用 OCR 引擎去“看”图片里的字！
-    loader = PyPDFLoader("temp_upload.pdf") 
-    docs = loader.load()
     
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=200, chunk_overlap=20)
+    loader = PyPDFLoader("temp_upload.pdf")
+    docs = loader.load()
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=400, chunk_overlap=40)
     splits = text_splitter.split_documents(docs)
     
     embeddings = DashScopeEmbeddings(
@@ -46,6 +50,37 @@ def load_knowledge_base(file_bytes):
         model="text-embedding-v3" 
     )
     return FAISS.from_documents(splits, embeddings)
+
+# --- 侧边栏上传逻辑更新 ---
+with st.sidebar:
+    st.header("📂 老王的永久记忆库")
+    uploaded_file = st.file_uploader("上传《软件设计师》新资料", type=["pdf"])
+    
+    if st.button("开始学习") and uploaded_file is not None:
+        if uploaded_file.name in st.session_state.learned_files:
+            st.warning(f"这份《{uploaded_file.name}》老王已经倒背如流啦！")
+        else:
+            with st.spinner(f"正在将《{uploaded_file.name}》融入大脑..."):
+                try:
+                    new_db = process_new_pdf(uploaded_file.getvalue(), uploaded_file.name)
+                    
+                    if st.session_state.vectorstore is None:
+                        # 第一次学习，直接把新脑子装上
+                        st.session_state.vectorstore = new_db
+                    else:
+                        # 重点：把新学的知识合并进现有的脑子里！
+                        st.session_state.vectorstore.merge_from(new_db)
+                    
+                    st.session_state.learned_files.append(uploaded_file.name)
+                    st.success(f"✅ 成功融合！目前已掌握 {len(st.session_state.learned_files)} 份资料。")
+                except Exception as e:
+                    st.error(f"融合失败：{str(e)}")
+
+    if st.session_state.learned_files:
+        st.write("---")
+        st.write("🧠 目前已掌握的知识：")
+        for f_name in st.session_state.learned_files:
+            st.caption(f"• {f_name}")
 
 # 修改前面的 vectorstore 判断逻辑
 vectorstore = None
@@ -79,10 +114,11 @@ def web_search(query: str) -> str:
 @tool
 def search_internal_doc(query: str) -> str:
     """当用户询问关于上传的PDF文件、内部知识、复习资料时，调用此工具。"""
-    if vectorstore is None:
-        return "请礼貌地告诉用户：老王目前没有拿到 PDF 文件，请先在网页左侧上传！"
+    # 🚨 这里改用 session_state 里的全局脑子
+    if st.session_state.vectorstore is None:
+        return "请礼貌地告诉用户：老王目前脑子里空空如也，请先上传 PDF 资料！"
     
-    retriever = vectorstore.as_retriever()
+    retriever = st.session_state.vectorstore.as_retriever()
     results = retriever.invoke(query)
     return "\n\n".join([res.page_content for res in results])
 
