@@ -1,4 +1,5 @@
 import streamlit as st
+import os  # 👈 新增：用于保存临时上传的文件
 from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
@@ -24,13 +25,23 @@ tavily_client = TavilyClient(api_key=st.secrets["TAVILY_API_KEY"])
 # 使用 @st.cache_resource 防止每次聊天都重新读取文件
 # ==========================================
 @st.cache_resource
-def load_knowledge_base():
-    # 🚨 魔法替换：TextLoader 变成 PyPDFLoader！
-    loader = PyPDFLoader("knowledge.pdf") 
+# ==========================================
+# 🚨 终极进化：网页侧边栏上传组件
+# ==========================================
+with st.sidebar:
+    st.header("📂 老王的记忆插槽")
+    uploaded_file = st.file_uploader("请喂给老王一份新的 PDF 秘籍", type=["pdf"])
+
+# 动态读取并缓存上传的文件（把文件字节流传进来，只要传了新文件，就会自动刷新脑子）
+@st.cache_resource(show_spinner=False)
+def load_knowledge_base(file_bytes):
+    # 将网页传上来的文件流，临时保存在云服务器硬盘上
+    with open("temp_upload.pdf", "wb") as f:
+        f.write(file_bytes)
+        
+    loader = PyPDFLoader("temp_upload.pdf")
     docs = loader.load()
-    
-    # 把块大小调到 200，让老王每次能读更完整的一段话
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=200, chunk_overlap=20) 
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=200, chunk_overlap=20)
     splits = text_splitter.split_documents(docs)
     
     embeddings = DashScopeEmbeddings(
@@ -39,10 +50,18 @@ def load_knowledge_base():
     )
     return FAISS.from_documents(splits, embeddings)
 
-vectorstore = load_knowledge_base()
+# 判断用户有没有上传文件
+vectorstore = None
+if uploaded_file is not None:
+    with st.spinner("老王正在疯狂速读 PDF..."):
+        # 提取真实文件数据喂给大模型
+        vectorstore = load_knowledge_base(uploaded_file.getvalue())
+    st.sidebar.success("✅ 秘籍吸收完毕！可随时提问。")
+else:
+    st.sidebar.info("👈 请先上传 PDF，否则老王的私有记忆库是空的哦！")
 
 # ==========================================
-# 🛠️ 技能 1：公网搜索
+# 🛠️ 技能 1：公网搜索 (保持不变)
 # ==========================================
 @tool
 def web_search(query: str) -> str:
@@ -54,17 +73,21 @@ def web_search(query: str) -> str:
         return f"搜索失败：{str(e)}"
 
 # ==========================================
-# 🛠️ 技能 2：私有知识库搜索 (RAG)
+# 🛠️ 技能 2：私有知识库搜索 (增加判空逻辑)
 # ==========================================
 @tool
 def search_internal_doc(query: str) -> str:
-    """当用户询问关于'软件设计师'考试口诀、李四老板的日语学习情况、或者绝密档案时，必须调用此工具查询内部知识库。"""
+    """当用户询问关于上传的PDF文件、内部知识、复习资料时，调用此工具。"""
+    if vectorstore is None:
+        return "请礼貌地告诉用户：老王目前没有拿到 PDF 文件，请先在网页左侧上传！"
+    
     retriever = vectorstore.as_retriever()
     results = retriever.invoke(query)
     return "\n\n".join([res.page_content for res in results])
 
-# 将两个技能都装进大脑
+# 将两个技能装进大脑
 agent_executor = create_react_agent(llm, [web_search, search_internal_doc])
+
 
 # ---------------- 下面是网页界面的常规逻辑 ----------------
 if "messages" not in st.session_state:
