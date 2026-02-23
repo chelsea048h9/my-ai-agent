@@ -12,19 +12,15 @@ from langchain_community.vectorstores import FAISS
 st.set_page_config(page_title="完全体老王 (双脑驱动)", page_icon="🧠")
 st.title("🧠 完全体老王 (公网 + 私有知识库)")
 
-# 1. 初始化
+# 初始化核心引擎 (大模型 + 搜索引擎)
 llm = ChatOpenAI(
     api_key=st.secrets["API_KEY"], 
     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
     model="qwen-max"
-)
-tavily_client = TavilyClient(api_key=st.secrets["TAVILY_API_KEY"])
+) # 👈 检查这里！是不是少了这个反括号？
 
-# ==========================================
-# 🚨 新增魔法：把知识库缓存在网页内存里！
-# 使用 @st.cache_resource 防止每次聊天都重新读取文件
-# ==========================================
-@st.cache_resource
+tavily_client = TavilyClient(api_key=st.secrets["TAVILY_API_KEY"]) # 👈 还有这里，是不是拼写不完整？
+
 # ==========================================
 # 🚨 终极进化：网页侧边栏上传组件
 # ==========================================
