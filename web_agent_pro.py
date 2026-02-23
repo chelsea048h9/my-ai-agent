@@ -46,13 +46,17 @@ def load_knowledge_base(file_bytes):
     )
     return FAISS.from_documents(splits, embeddings)
 
-# 判断用户有没有上传文件
+# 修改前面的 vectorstore 判断逻辑
 vectorstore = None
 if uploaded_file is not None:
     with st.spinner("老王正在疯狂速读 PDF..."):
-        # 提取真实文件数据喂给大模型
-        vectorstore = load_knowledge_base(uploaded_file.getvalue())
-    st.sidebar.success("✅ 秘籍吸收完毕！可随时提问。")
+        try:
+            # 尝试提取真实文件数据喂给大模型
+            vectorstore = load_knowledge_base(uploaded_file.getvalue())
+            st.sidebar.success("✅ 秘籍吸收完毕！可随时提问。")
+        except Exception as e:
+            # 如果抓到报错（比如读不到文字导致 IndexError），就拦截下来并提示用户
+            st.sidebar.error("❌ 哎呀，老王没法从这个 PDF 里提取出文字！它可能是个纯扫描件或者图片哦，请换一份能用鼠标复制文字的 PDF 试试！")
 else:
     st.sidebar.info("👈 请先上传 PDF，否则老王的私有记忆库是空的哦！")
 
