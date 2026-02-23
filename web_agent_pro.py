@@ -19,9 +19,9 @@ llm = ChatOpenAI(
     model="qwen-max"
 ) # 👈 检查这里！是不是少了这个反括号？
 # 如果内存里还没有脑子，先初始化一个空的
+# 初始化老王的记忆支架（放在设置 API_KEY 的附近即可）
 if 'vectorstore' not in st.session_state:
     st.session_state.vectorstore = None
-# 记录已经学过的文件名，防止重复投喂
 if 'learned_files' not in st.session_state:
     st.session_state.learned_files = []
 tavily_client = TavilyClient(api_key=st.secrets["TAVILY_API_KEY"]) # 👈 还有这里，是不是拼写不完整？
@@ -35,13 +35,13 @@ with st.sidebar:
 
 # 动态读取并缓存上传的文件（把文件字节流传进来，只要传了新文件，就会自动刷新脑子）
 @st.cache_resource(show_spinner=False)
-# 修改加载函数，使其只负责把单个 PDF 转成向量块
 def process_new_pdf(file_bytes, file_name):
     with open("temp_upload.pdf", "wb") as f:
         f.write(file_bytes)
-    
-    loader = PyPDFLoader("temp_upload.pdf")
+        
+    loader = PyPDFLoader("temp_upload.pdf") # 记得不要加 extract_images
     docs = loader.load()
+    
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=400, chunk_overlap=40)
     splits = text_splitter.split_documents(docs)
     
@@ -54,31 +54,34 @@ def process_new_pdf(file_bytes, file_name):
 # --- 侧边栏上传逻辑更新 ---
 with st.sidebar:
     st.header("📂 老王的永久记忆库")
+    # 加上了多选框功能，视觉更爽
     uploaded_file = st.file_uploader("上传《软件设计师》新资料", type=["pdf"])
     
-    if st.button("开始学习") and uploaded_file is not None:
+    # 必须点击按钮才开始学习，防止卡顿
+    if st.button("🧠 开始融合学习") and uploaded_file is not None:
         if uploaded_file.name in st.session_state.learned_files:
             st.warning(f"这份《{uploaded_file.name}》老王已经倒背如流啦！")
         else:
             with st.spinner(f"正在将《{uploaded_file.name}》融入大脑..."):
                 try:
+                    # 召唤新的函数
                     new_db = process_new_pdf(uploaded_file.getvalue(), uploaded_file.name)
                     
+                    # 记忆缝合逻辑
                     if st.session_state.vectorstore is None:
-                        # 第一次学习，直接把新脑子装上
                         st.session_state.vectorstore = new_db
                     else:
-                        # 重点：把新学的知识合并进现有的脑子里！
                         st.session_state.vectorstore.merge_from(new_db)
                     
                     st.session_state.learned_files.append(uploaded_file.name)
                     st.success(f"✅ 成功融合！目前已掌握 {len(st.session_state.learned_files)} 份资料。")
                 except Exception as e:
-                    st.error(f"融合失败：{str(e)}")
+                    st.error(f"❌ 抓到真凶了！真实报错是：{str(e)}")
 
+    # 展示已经学过的书单
     if st.session_state.learned_files:
         st.write("---")
-        st.write("🧠 目前已掌握的知识：")
+        st.write("📚 目前已掌握的知识：")
         for f_name in st.session_state.learned_files:
             st.caption(f"• {f_name}")
 
