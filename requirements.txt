@@ -9,3 +9,4 @@ dashscope
 faiss-cpu
 tiktoken
 pypdf
+rapidocr-onnxruntime

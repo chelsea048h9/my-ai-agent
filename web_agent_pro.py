@@ -31,12 +31,13 @@ with st.sidebar:
 # 动态读取并缓存上传的文件（把文件字节流传进来，只要传了新文件，就会自动刷新脑子）
 @st.cache_resource(show_spinner=False)
 def load_knowledge_base(file_bytes):
-    # 将网页传上来的文件流，临时保存在云服务器硬盘上
     with open("temp_upload.pdf", "wb") as f:
         f.write(file_bytes)
         
-    loader = PyPDFLoader("temp_upload.pdf")
+    # 🚨 魔法觉醒：开启 extract_images=True，老王就会自动调用 OCR 引擎去“看”图片里的字！
+    loader = PyPDFLoader("temp_upload.pdf", extract_images=True) 
     docs = loader.load()
+    
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=200, chunk_overlap=20)
     splits = text_splitter.split_documents(docs)
     
