@@ -1,5 +1,5 @@
 import streamlit as st
-import os  # 👈 新增：用于保存临时上传的文件
+import os
 from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
@@ -17,29 +17,22 @@ llm = ChatOpenAI(
     api_key=st.secrets["API_KEY"], 
     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
     model="qwen-max"
-) # 👈 检查这里！是不是少了这个反括号？
-# 如果内存里还没有脑子，先初始化一个空的
-# 初始化老王的记忆支架（放在设置 API_KEY 的附近即可）
+)
+tavily_client = TavilyClient(api_key=st.secrets["TAVILY_API_KEY"])
+
+# 🧠 初始化老王的永久记忆支架
 if 'vectorstore' not in st.session_state:
     st.session_state.vectorstore = None
 if 'learned_files' not in st.session_state:
     st.session_state.learned_files = []
-tavily_client = TavilyClient(api_key=st.secrets["TAVILY_API_KEY"]) # 👈 还有这里，是不是拼写不完整？
 
-# ==========================================
-# 🚨 终极进化：网页侧边栏上传组件
-# ==========================================
-with st.sidebar:
-    st.header("📂 老王的记忆插槽")
-    uploaded_file = st.file_uploader("请喂给老王一份新的 PDF 秘籍", type=["pdf"])
-
-# 动态读取并缓存上传的文件（把文件字节流传进来，只要传了新文件，就会自动刷新脑子）
+# 动态读取并转换 PDF 的核心函数
 @st.cache_resource(show_spinner=False)
 def process_new_pdf(file_bytes, file_name):
     with open("temp_upload.pdf", "wb") as f:
         f.write(file_bytes)
         
-    loader = PyPDFLoader("temp_upload.pdf") # 记得不要加 extract_images
+    loader = PyPDFLoader("temp_upload.pdf") 
     docs = loader.load()
     
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=400, chunk_overlap=40)
@@ -51,23 +44,21 @@ def process_new_pdf(file_bytes, file_name):
     )
     return FAISS.from_documents(splits, embeddings)
 
-# --- 侧边栏上传逻辑更新 ---
+# ==========================================
+# 🚨 终极进化：侧边栏与记忆融合操作台
+# ==========================================
 with st.sidebar:
     st.header("📂 老王的永久记忆库")
-    # 加上了多选框功能，视觉更爽
     uploaded_file = st.file_uploader("上传《软件设计师》新资料", type=["pdf"])
     
-    # 必须点击按钮才开始学习，防止卡顿
     if st.button("🧠 开始融合学习") and uploaded_file is not None:
         if uploaded_file.name in st.session_state.learned_files:
             st.warning(f"这份《{uploaded_file.name}》老王已经倒背如流啦！")
         else:
             with st.spinner(f"正在将《{uploaded_file.name}》融入大脑..."):
                 try:
-                    # 召唤新的函数
                     new_db = process_new_pdf(uploaded_file.getvalue(), uploaded_file.name)
                     
-                    # 记忆缝合逻辑
                     if st.session_state.vectorstore is None:
                         st.session_state.vectorstore = new_db
                     else:
@@ -78,26 +69,13 @@ with st.sidebar:
                 except Exception as e:
                     st.error(f"❌ 抓到真凶了！真实报错是：{str(e)}")
 
-    # 展示已经学过的书单
     if st.session_state.learned_files:
         st.write("---")
         st.write("📚 目前已掌握的知识：")
         for f_name in st.session_state.learned_files:
             st.caption(f"• {f_name}")
 
-# 修改前面的 vectorstore 判断逻辑
-vectorstore = None
-if uploaded_file is not None:
-    with st.spinner("老王正在疯狂速读 PDF..."):
-        try:
-            vectorstore = load_knowledge_base(uploaded_file.getvalue())
-            st.sidebar.success("✅ 秘籍吸收完毕！可随时提问。")
-        except Exception as e:
-            # 🚨 核心修改：让它把真实的报错代码吐在屏幕上！
-            st.sidebar.error(f"❌ 抓到真凶了！真实报错是：{str(e)}")
-            st.sidebar.error(f"报错类型：{type(e)}")
-else:
-    st.sidebar.info("👈 请先上传 PDF，否则老王的私有记忆库是空的哦！")
+# 下面保留你的 @tool 技能代码和聊天界面代码，不需要动！
 
 # ==========================================
 # 🛠️ 技能 1：公网搜索 (保持不变)
