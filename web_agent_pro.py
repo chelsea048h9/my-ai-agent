@@ -35,7 +35,7 @@ def load_knowledge_base(file_bytes):
         f.write(file_bytes)
         
     # 🚨 魔法觉醒：开启 extract_images=True，老王就会自动调用 OCR 引擎去“看”图片里的字！
-    loader = PyPDFLoader("temp_upload.pdf", extract_images=True) 
+    loader = PyPDFLoader("temp_upload.pdf") 
     docs = loader.load()
     
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=200, chunk_overlap=20)
