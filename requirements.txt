@@ -8,3 +8,4 @@ langchain-community
 dashscope
 faiss-cpu
 tiktoken
+pypdf

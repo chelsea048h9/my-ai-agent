@@ -3,7 +3,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
 from tavily import TavilyClient
-from langchain_community.document_loaders import TextLoader
+from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import DashScopeEmbeddings
 from langchain_community.vectorstores import FAISS
@@ -25,10 +25,14 @@ tavily_client = TavilyClient(api_key=st.secrets["TAVILY_API_KEY"])
 # ==========================================
 @st.cache_resource
 def load_knowledge_base():
-    loader = TextLoader("knowledge.txt", encoding="utf-8")
+    # 🚨 魔法替换：TextLoader 变成 PyPDFLoader！
+    loader = PyPDFLoader("knowledge.pdf") 
     docs = loader.load()
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=100, chunk_overlap=20)
+    
+    # 把块大小调到 200，让老王每次能读更完整的一段话
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=200, chunk_overlap=20) 
     splits = text_splitter.split_documents(docs)
+    
     embeddings = DashScopeEmbeddings(
         dashscope_api_key=st.secrets["API_KEY"], 
         model="text-embedding-v3" 
