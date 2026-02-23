@@ -3,12 +3,15 @@ from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
 from tavily import TavilyClient
+from langchain_community.document_loaders import TextLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.embeddings import DashScopeEmbeddings
+from langchain_community.vectorstores import FAISS
 
-# 1. 网页配置
-st.set_page_config(page_title="终极老王 (LangChain版)", page_icon="👑")
-st.title("👑 终极老王 Web 聊天室 (大厂框架驱动)")
+st.set_page_config(page_title="完全体老王 (双脑驱动)", page_icon="🧠")
+st.title("🧠 完全体老王 (公网 + 私有知识库)")
 
-# 2. 初始化核心引擎 (大模型 + 搜索引擎)
+# 1. 初始化
 llm = ChatOpenAI(
     api_key=st.secrets["API_KEY"], 
     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
@@ -17,58 +20,66 @@ llm = ChatOpenAI(
 tavily_client = TavilyClient(api_key=st.secrets["TAVILY_API_KEY"])
 
 # ==========================================
-# 🚨 终极魔法 1：极简工具定义
-# 不需要写任何 JSON！直接用 @tool 装饰器！
+# 🚨 新增魔法：把知识库缓存在网页内存里！
+# 使用 @st.cache_resource 防止每次聊天都重新读取文件
+# ==========================================
+@st.cache_resource
+def load_knowledge_base():
+    loader = TextLoader("knowledge.txt", encoding="utf-8")
+    docs = loader.load()
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=100, chunk_overlap=20)
+    splits = text_splitter.split_documents(docs)
+    embeddings = DashScopeEmbeddings(
+        dashscope_api_key=st.secrets["API_KEY"], 
+        model="text-embedding-v3" 
+    )
+    return FAISS.from_documents(splits, embeddings)
+
+vectorstore = load_knowledge_base()
+
+# ==========================================
+# 🛠️ 技能 1：公网搜索
 # ==========================================
 @tool
 def web_search(query: str) -> str:
-    """当需要查询实时信息、新闻、不知道的知识时，调用此工具全网搜索。"""
+    """当需要查询实时信息、新闻、不知道的客观知识时，调用此工具全网搜索。"""
     try:
-        response = tavily_client.search(query=query, search_depth="basic", max_results=3)
+        response = tavily_client.search(query=query, search_depth="basic", max_results=2)
         return "\n\n".join([f"标题: {res['title']}\n内容: {res['content']}" for res in response['results']])
     except Exception as e:
         return f"搜索失败：{str(e)}"
 
 # ==========================================
-# 🚨 终极魔法 2：一行代码组装智能体！
+# 🛠️ 技能 2：私有知识库搜索 (RAG)
 # ==========================================
-agent_executor = create_react_agent(llm, [web_search])
+@tool
+def search_internal_doc(query: str) -> str:
+    """当用户询问关于'软件设计师'考试口诀、李四老板的日语学习情况、或者绝密档案时，必须调用此工具查询内部知识库。"""
+    retriever = vectorstore.as_retriever()
+    results = retriever.invoke(query)
+    return "\n\n".join([res.page_content for res in results])
 
-# 3. Streamlit 网页记忆初始化
+# 将两个技能都装进大脑
+agent_executor = create_react_agent(llm, [web_search, search_internal_doc])
+
+# ---------------- 下面是网页界面的常规逻辑 ----------------
 if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {"role": "system", "content": "你是一个幽默、全能的资深AI助理老王。你有完美的记忆力。"}
-    ]
+    st.session_state.messages = [{"role": "system", "content": "你是一个幽默的全能AI助理老王。"}]
 
-# 4. 渲染历史聊天气泡
 for msg in st.session_state.messages:
     if msg["role"] != "system":
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-# 5. 核心交互逻辑
-if user_input := st.chat_input("跟注入了 LangChain 灵魂的老王聊聊吧！比如：今天A股收盘点数？"):
-    
-    # 显示用户的输入
+if user_input := st.chat_input("试试连招：今天的微博热搜是什么？那软件设计师的口诀呢？"):
     st.session_state.messages.append({"role": "user", "content": user_input})
     with st.chat_message("user"):
         st.markdown(user_input)
 
     with st.chat_message("assistant"):
-        with st.spinner("老王正在通过 LangChain 引擎飞速思考并检索全网..."):
-            
-            # ==========================================
-            # 🚨 终极魔法 3：告别繁琐的工具调用循环！
-            # 直接把整个聊天记录扔给 agent_executor，
-            # 它会自动帮你判断要不要用工具、自动调用、自动总结！
-            # ==========================================
+        with st.spinner("老王正在左右脑同时运转..."):
             response = agent_executor.invoke({"messages": st.session_state.messages})
-            
-            # 从 LangChain 的返回结果中，提取最后一句 AI 说的话
             ai_reply = response["messages"][-1].content
-            
-            # 显示在网页上
             st.markdown(ai_reply)
             
-    # 把回答存入记忆
     st.session_state.messages.append({"role": "assistant", "content": ai_reply})
