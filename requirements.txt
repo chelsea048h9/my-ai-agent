@@ -4,3 +4,7 @@ tavily-python
 langchain
 langchain-openai
 langgraph
+langchain-community
+dashscope
+faiss-cpu
+tiktoken
