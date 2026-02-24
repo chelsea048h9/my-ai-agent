@@ -8,6 +8,7 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import DashScopeEmbeddings
 from langchain_community.vectorstores import FAISS
+from langchain_community.document_loaders import PyPDFLoader, TextLoader
 
 st.set_page_config(page_title="完全体老王 (双脑驱动)", page_icon="🧠")
 st.title("🧠 完全体老王 (公网 + 私有知识库)")
@@ -31,11 +32,24 @@ if 'raw_text' not in st.session_state:
 
 # 动态读取并转换 PDF 的核心函数
 @st.cache_resource(show_spinner=False)
-def process_new_pdf(file_bytes, file_name):
-    with open("temp_upload.pdf", "wb") as f:
+def process_new_document(file_bytes, file_name):
+    # 提取文件的后缀名 (比如 .pdf, .txt)
+    ext = os.path.splitext(file_name)[1].lower()
+    
+    # 动态生成临时文件名（保留原后缀）
+    temp_file_path = f"temp_upload{ext}"
+    with open(temp_file_path, "wb") as f:
         f.write(file_bytes)
         
-    loader = PyPDFLoader("temp_upload.pdf") 
+    # 🚨 核心路由逻辑：根据不同格式调用不同的解析器
+    if ext == ".pdf":
+        loader = PyPDFLoader(temp_file_path)
+    elif ext in [".txt", ".md", ".csv"]:
+        # 纯文本类的文件，用 TextLoader 通杀
+        loader = TextLoader(temp_file_path, encoding='utf-8')
+    else:
+        raise ValueError(f"哎呀，老王还不认识 {ext} 这种格式的文件！")
+        
     docs = loader.load()
     
     # 提取完整纯文本
@@ -50,7 +64,6 @@ def process_new_pdf(file_bytes, file_name):
     )
     vectorstore = FAISS.from_documents(splits, embeddings)
     
-    # 🚨 核心修改：同时返回“向量数据库”和“纯文本”
     return vectorstore, full_text
 
 # ==========================================
@@ -58,29 +71,36 @@ def process_new_pdf(file_bytes, file_name):
 # ==========================================
 with st.sidebar:
     st.header("📂 老王的永久记忆库")
-    uploaded_file = st.file_uploader("上传《软件设计师》新资料", type=["pdf"])
     
-    if st.button("🧠 开始融合学习") and uploaded_file is not None:
-        if uploaded_file.name in st.session_state.learned_files:
-            st.warning(f"这份《{uploaded_file.name}》老王已经倒背如流啦！")
-        else:
+    # 🚨 核心修改 1：放宽格式限制，并开启 accept_multiple_files=True
+    uploaded_files = st.file_uploader(
+        "批量上传秘籍 (支持 PDF/TXT/MD)", 
+        type=["pdf", "txt", "md"], 
+        accept_multiple_files=True  # 魔法开关在这里！
+    )
+    
+    if st.button("🧠 开始批量融合学习") and uploaded_files:
+        # 🚨 核心修改 2：把传入的列表做个 for 循环，挨个吃掉
+        for uploaded_file in uploaded_files:
+            if uploaded_file.name in st.session_state.learned_files:
+                st.warning(f"《{uploaded_file.name}》老王已经倒背如流啦，跳过！")
+                continue # 学过的直接跳过，学下一本
+                
             with st.spinner(f"正在将《{uploaded_file.name}》融入大脑..."):
                 try:
-                    # 🚨 核心修改：同时接收返回的两个宝藏
-                    new_db, new_text = process_new_pdf(uploaded_file.getvalue(), uploaded_file.name)
+                    # 调用刚才写好的全格式解析器
+                    new_db, new_text = process_new_document(uploaded_file.getvalue(), uploaded_file.name)
                     
                     if st.session_state.vectorstore is None:
                         st.session_state.vectorstore = new_db
                     else:
                         st.session_state.vectorstore.merge_from(new_db)
                     
-                    # 在前台安全地把书本内容塞进书包
                     st.session_state.raw_text += f"\n\n---《{uploaded_file.name}》---\n\n{new_text}"
-                    
                     st.session_state.learned_files.append(uploaded_file.name)
-                    st.success(f"✅ 成功融合！目前已掌握 {len(st.session_state.learned_files)} 份资料。")
+                    st.success(f"✅ 《{uploaded_file.name}》融合完毕！")
                 except Exception as e:
-                    st.error(f"❌ 抓到真凶了！真实报错是：{str(e)}")
+                    st.error(f"❌ 融合《{uploaded_file.name}》时出错：{str(e)}")
 
     if st.session_state.learned_files:
         st.write("---")
