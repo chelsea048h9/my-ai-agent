@@ -38,11 +38,9 @@ def process_new_pdf(file_bytes, file_name):
     loader = PyPDFLoader("temp_upload.pdf") 
     docs = loader.load()
     
-    # 👇 🚨 新增：把所有页的字拼起来，塞进老王的全局大书包里！
+    # 提取完整纯文本
     full_text = "\n".join([doc.page_content for doc in docs])
-    st.session_state.raw_text += f"\n\n---《{file_name}》---\n\n{full_text}"
     
-    # 下面切碎并存入 FAISS 的代码保持不变...
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=400, chunk_overlap=40)
     splits = text_splitter.split_documents(docs)
     
@@ -50,7 +48,10 @@ def process_new_pdf(file_bytes, file_name):
         dashscope_api_key=st.secrets["API_KEY"], 
         model="text-embedding-v3" 
     )
-    return FAISS.from_documents(splits, embeddings)
+    vectorstore = FAISS.from_documents(splits, embeddings)
+    
+    # 🚨 核心修改：同时返回“向量数据库”和“纯文本”
+    return vectorstore, full_text
 
 # ==========================================
 # 🚨 终极进化：侧边栏与记忆融合操作台
@@ -65,12 +66,16 @@ with st.sidebar:
         else:
             with st.spinner(f"正在将《{uploaded_file.name}》融入大脑..."):
                 try:
-                    new_db = process_new_pdf(uploaded_file.getvalue(), uploaded_file.name)
+                    # 🚨 核心修改：同时接收返回的两个宝藏
+                    new_db, new_text = process_new_pdf(uploaded_file.getvalue(), uploaded_file.name)
                     
                     if st.session_state.vectorstore is None:
                         st.session_state.vectorstore = new_db
                     else:
                         st.session_state.vectorstore.merge_from(new_db)
+                    
+                    # 在前台安全地把书本内容塞进书包
+                    st.session_state.raw_text += f"\n\n---《{uploaded_file.name}》---\n\n{new_text}"
                     
                     st.session_state.learned_files.append(uploaded_file.name)
                     st.success(f"✅ 成功融合！目前已掌握 {len(st.session_state.learned_files)} 份资料。")
@@ -113,18 +118,20 @@ def search_internal_doc(query: str) -> str:
     results = retriever.invoke(query)
     return "\n\n".join([res.page_content for res in results])
 # ==========================================
-# 🛠️ 技能 3：全局文档分析 (突破 RAG 碎片限制)
+# 🛠️ 技能 3：全局文档分析 (破除线程壁垒版)
 # ==========================================
+# 🚨 核心魔法：提前把纯文本拿出来，供子线程随时取用
+GLOBAL_RAW_TEXT = st.session_state.get('raw_text', "")
+
 @tool
 def analyze_whole_document(query: str) -> str:
     """当用户要求“总结全文”、“整理思维导图”、“提取大纲”等涉及宏观全局分析时，强制调用此工具。"""
-    if not st.session_state.get('raw_text'):
+    if not GLOBAL_RAW_TEXT:
         return "老王脑子里还没有完整的文档，请先上传 PDF 资料！"
     
-    # 截取前 30000 个字符（保护你的免费 API 不被超长文本刷爆 Token）
-    text_to_analyze = st.session_state.raw_text[:30000]
+    # 截取前 30000 个字符
+    text_to_analyze = GLOBAL_RAW_TEXT[:30000]
     
-    # 在后台单独召唤一个老王的分身，专心通读这几万字！
     summary_llm = ChatOpenAI(
         api_key=st.secrets["API_KEY"], 
         base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
@@ -133,7 +140,6 @@ def analyze_whole_document(query: str) -> str:
     
     prompt = f"你是一个资深的系统架构师。请基于以下我提供的完整文档内容，完成用户的任务：\n\n用户任务：{query}\n\n文档核心内容：\n{text_to_analyze}"
     
-    # 强行让分身阅读并返回极其完整的总结
     response = summary_llm.invoke(prompt)
     return response.content
 
