@@ -74,6 +74,10 @@ def process_new_document(file_bytes, file_name):
 # 🚨 终极进化：侧边栏与记忆融合操作台
 # ==========================================
 with st.sidebar:
+    # 加在侧边栏的最下面
+    st.write("---")
+    st.header("⚙️ 团队偏好设置")
+    need_translate = st.checkbox("🌐 召唤渡边 (将老王的回答翻译为纯正日文)", value=False)
     st.header("📂 老王的永久记忆库")
     
     # 🚨 核心修改 1：放宽格式限制，并开启 accept_multiple_files=True
@@ -171,9 +175,11 @@ def analyze_whole_document(query: str) -> str:
 # 🏢 AI 创业公司：多 Agent 协作系统架构
 # ==========================================
 
+
 # 1. 定义公司的“共享黑板” (State)
 class AgentState(TypedDict):
     messages: Annotated[list, add_messages]
+    need_translate: bool  # 🚨 新增：记录老板是否需要翻译的旨意
 
 # 2. 实例化一号员工：【研究员老王】 (他带着那三个技能工具干活)
 researcher_agent = create_react_agent(llm, [web_search, search_internal_doc, analyze_whole_document])
@@ -200,6 +206,13 @@ def translator_node(state: AgentState):
         {"role": "user", "content": f"请翻译这份报告：\n{laowang_report}"}
     ])
     return {"messages": [response]}
+# 👇 🚨 新增：调度员函数
+def route_after_research(state: AgentState):
+    """根据老板的旨意，决定老王干完活后是直接交差，还是递交给渡边"""
+    if state.get("need_translate", False):
+        return "Translator"
+    else:
+        return END
 
 # 4. 包工头排班：用 Graph 把员工连成流水线
 workflow = StateGraph(AgentState)
@@ -208,7 +221,10 @@ workflow.add_node("Researcher", researcher_node)
 workflow.add_node("Translator", translator_node)
 
 workflow.add_edge(START, "Researcher")
-workflow.add_edge("Researcher", "Translator")
+
+# 👇 🚨 核心修改：把原来的 workflow.add_edge("Researcher", "Translator") 删掉，换成这行“条件连线”！
+workflow.add_conditional_edges("Researcher", route_after_research, {"Translator": "Translator", END: END})
+
 workflow.add_edge("Translator", END)
 
 # 正式挂牌营业！
@@ -229,9 +245,15 @@ if user_input := st.chat_input("试试连招：今天的微博热搜是什么？
         st.markdown(user_input)
 
     with st.chat_message("assistant"):
-        with st.spinner("老王正在查阅资料，渡边正在准备日文翻译..."): # 👈 顺便把提示语也改得霸气一点
-            # 呼叫整个公司团队！
-            response = multi_agent_app.invoke({"messages": st.session_state.messages})
+        # 智能提示语：根据开关状态显示谁在干活
+        status_text = "老王正在查阅资料，渡边正在准备日文翻译..." if need_translate else "老王正在疯狂速读并总结..."
+        
+        with st.spinner(status_text):
+            # 🚨 核心修改：把 need_translate 传进公司黑板！
+            response = multi_agent_app.invoke({
+                "messages": st.session_state.messages,
+                "need_translate": need_translate 
+            })
             ai_reply = response["messages"][-1].content
             st.markdown(ai_reply)
             
