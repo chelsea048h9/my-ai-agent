@@ -90,16 +90,18 @@ def web_search(query: str) -> str:
         return f"搜索失败：{str(e)}"
 
 # ==========================================
-# 🛠️ 技能 2：私有知识库搜索 (增加判空逻辑)
+# 🛠️ 技能 2：私有知识库搜索 (破除线程壁垒版)
 # ==========================================
+# 🚨 核心魔法：在主线程里先把脑子拿出来，放进一个普通变量里，让子线程也能摸得到
+GLOBAL_BRAIN = st.session_state.get('vectorstore', None)
+
 @tool
 def search_internal_doc(query: str) -> str:
     """当用户询问关于上传的PDF文件、内部知识、复习资料时，调用此工具。"""
-    # 🚨 这里改用 session_state 里的全局脑子
-    if st.session_state.vectorstore is None:
+    if GLOBAL_BRAIN is None:
         return "请礼貌地告诉用户：老王目前脑子里空空如也，请先上传 PDF 资料！"
     
-    retriever = st.session_state.vectorstore.as_retriever()
+    retriever = GLOBAL_BRAIN.as_retriever()
     results = retriever.invoke(query)
     return "\n\n".join([res.page_content for res in results])
 
