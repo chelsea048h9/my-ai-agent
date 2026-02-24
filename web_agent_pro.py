@@ -25,6 +25,9 @@ if 'vectorstore' not in st.session_state:
     st.session_state.vectorstore = None
 if 'learned_files' not in st.session_state:
     st.session_state.learned_files = []
+# 👇 🚨 新增：准备一个大书包，用来装整本书的纯文本
+if 'raw_text' not in st.session_state:
+    st.session_state.raw_text = ""
 
 # 动态读取并转换 PDF 的核心函数
 @st.cache_resource(show_spinner=False)
@@ -35,6 +38,11 @@ def process_new_pdf(file_bytes, file_name):
     loader = PyPDFLoader("temp_upload.pdf") 
     docs = loader.load()
     
+    # 👇 🚨 新增：把所有页的字拼起来，塞进老王的全局大书包里！
+    full_text = "\n".join([doc.page_content for doc in docs])
+    st.session_state.raw_text += f"\n\n---《{file_name}》---\n\n{full_text}"
+    
+    # 下面切碎并存入 FAISS 的代码保持不变...
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=400, chunk_overlap=40)
     splits = text_splitter.split_documents(docs)
     
@@ -104,10 +112,33 @@ def search_internal_doc(query: str) -> str:
     retriever = GLOBAL_BRAIN.as_retriever()
     results = retriever.invoke(query)
     return "\n\n".join([res.page_content for res in results])
+# ==========================================
+# 🛠️ 技能 3：全局文档分析 (突破 RAG 碎片限制)
+# ==========================================
+@tool
+def analyze_whole_document(query: str) -> str:
+    """当用户要求“总结全文”、“整理思维导图”、“提取大纲”等涉及宏观全局分析时，强制调用此工具。"""
+    if not st.session_state.get('raw_text'):
+        return "老王脑子里还没有完整的文档，请先上传 PDF 资料！"
+    
+    # 截取前 30000 个字符（保护你的免费 API 不被超长文本刷爆 Token）
+    text_to_analyze = st.session_state.raw_text[:30000]
+    
+    # 在后台单独召唤一个老王的分身，专心通读这几万字！
+    summary_llm = ChatOpenAI(
+        api_key=st.secrets["API_KEY"], 
+        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        model="qwen-max"
+    )
+    
+    prompt = f"你是一个资深的系统架构师。请基于以下我提供的完整文档内容，完成用户的任务：\n\n用户任务：{query}\n\n文档核心内容：\n{text_to_analyze}"
+    
+    # 强行让分身阅读并返回极其完整的总结
+    response = summary_llm.invoke(prompt)
+    return response.content
 
-# 将两个技能装进大脑
-agent_executor = create_react_agent(llm, [web_search, search_internal_doc])
-
+# 👇 🚨 把第三个技能加进列表里
+agent_executor = create_react_agent(llm, [web_search, search_internal_doc, analyze_whole_document])
 
 # ---------------- 下面是网页界面的常规逻辑 ----------------
 if "messages" not in st.session_state:
