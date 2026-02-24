@@ -1,4 +1,7 @@
 import streamlit as st
+from langgraph.graph import StateGraph, START, END
+from langgraph.graph.message import add_messages
+from typing import Annotated, TypedDict
 import os
 from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
@@ -9,6 +12,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import DashScopeEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
+
 
 st.set_page_config(page_title="完全体老王 (双脑驱动)", page_icon="🧠")
 st.title("🧠 完全体老王 (公网 + 私有知识库)")
@@ -163,8 +167,52 @@ def analyze_whole_document(query: str) -> str:
     response = summary_llm.invoke(prompt)
     return response.content
 
-# 👇 🚨 把第三个技能加进列表里
-agent_executor = create_react_agent(llm, [web_search, search_internal_doc, analyze_whole_document])
+# ==========================================
+# 🏢 AI 创业公司：多 Agent 协作系统架构
+# ==========================================
+
+# 1. 定义公司的“共享黑板” (State)
+class AgentState(TypedDict):
+    messages: Annotated[list, add_messages]
+
+# 2. 实例化一号员工：【研究员老王】 (他带着那三个技能工具干活)
+researcher_agent = create_react_agent(llm, [web_search, search_internal_doc, analyze_whole_document])
+
+def researcher_node(state: AgentState):
+    """老王的工作流：接单 -> 用工具查资料 -> 整理出中文技术大纲"""
+    result = researcher_agent.invoke({"messages": state["messages"]})
+    return {"messages": [result["messages"][-1]]}
+
+# 3. 实例化二号员工：【日籍翻译官渡边】
+def translator_node(state: AgentState):
+    """渡边的工作流：拿到老王的中文大纲 -> 转化为纯正的日本 IT 职场报告"""
+    laowang_report = state["messages"][-1].content
+    
+    sys_prompt = """你叫渡边，是一位在东京涩谷工作了10年的资深IT系统架构师。
+    请接收下面这份来自中文研究员的技术报告，将其完美翻译并润色为【地道、专业的日文 IT 业务报告】。
+    要求：
+    1. 必须使用标准 N2/N1 级别的日文商务/IT 术语。
+    2. 保持原有的思维导图或层级大纲格式，排版要极其清晰。
+    3. 在开头用日文跟用户打个招呼（比如：お疲れ様です、渡辺です...）。"""
+    
+    response = llm.invoke([
+        {"role": "system", "content": sys_prompt}, 
+        {"role": "user", "content": f"请翻译这份报告：\n{laowang_report}"}
+    ])
+    return {"messages": [response]}
+
+# 4. 包工头排班：用 Graph 把员工连成流水线
+workflow = StateGraph(AgentState)
+
+workflow.add_node("Researcher", researcher_node)
+workflow.add_node("Translator", translator_node)
+
+workflow.add_edge(START, "Researcher")
+workflow.add_edge("Researcher", "Translator")
+workflow.add_edge("Translator", END)
+
+# 正式挂牌营业！
+multi_agent_app = workflow.compile()
 
 # ---------------- 下面是网页界面的常规逻辑 ----------------
 if "messages" not in st.session_state:
@@ -181,8 +229,9 @@ if user_input := st.chat_input("试试连招：今天的微博热搜是什么？
         st.markdown(user_input)
 
     with st.chat_message("assistant"):
-        with st.spinner("老王正在左右脑同时运转..."):
-            response = agent_executor.invoke({"messages": st.session_state.messages})
+        with st.spinner("老王正在查阅资料，渡边正在准备日文翻译..."): # 👈 顺便把提示语也改得霸气一点
+            # 呼叫整个公司团队！
+            response = multi_agent_app.invoke({"messages": st.session_state.messages})
             ai_reply = response["messages"][-1].content
             st.markdown(ai_reply)
             
